@@ -52,12 +52,12 @@ class VQQModel:
     """Container for VQQ2 model components."""
 
     def __init__(self, ckpt, epoch):
-        self.encoder = torch.load(f"{ckpt}encoder_model_epoch_{epoch}.pth", map_location='cpu')
-        self.decoder = torch.load(f"{ckpt}decoder_model_epoch_{epoch}.pth", map_location='cpu')
-        self.net_g = torch.load(f"{ckpt}net_g_model_epoch_{epoch}.pth", map_location='cpu')
-        self.quantize = torch.load(f"{ckpt}quantize_model_epoch_{epoch}.pth", map_location='cpu')
-        self.quant_conv = torch.load(f"{ckpt}quant_conv_model_epoch_{epoch}.pth", map_location='cpu')
-        self.post_quant_conv = torch.load(f"{ckpt}post_quant_conv_model_epoch_{epoch}.pth", map_location='cpu')
+        self.encoder = torch.load(f"{ckpt}encoder_model_epoch_{epoch}.pth", map_location='cpu', weights_only=False)
+        self.decoder = torch.load(f"{ckpt}decoder_model_epoch_{epoch}.pth", map_location='cpu', weights_only=False)
+        self.net_g = torch.load(f"{ckpt}net_g_model_epoch_{epoch}.pth", map_location='cpu', weights_only=False)
+        self.quantize = torch.load(f"{ckpt}quantize_model_epoch_{epoch}.pth", map_location='cpu', weights_only=False)
+        self.quant_conv = torch.load(f"{ckpt}quant_conv_model_epoch_{epoch}.pth", map_location='cpu', weights_only=False)
+        self.post_quant_conv = torch.load(f"{ckpt}post_quant_conv_model_epoch_{epoch}.pth", map_location='cpu', weights_only=False)
 
     def cuda(self):
         for attr in ['encoder', 'decoder', 'net_g', 'quantize', 'quant_conv', 'post_quant_conv']:
@@ -199,7 +199,7 @@ class ImageLoader:
         # First, pad by crop margin (C) on both sides to preserve original size after assembly
         if crop_margin is not None:
             Cz, Cx, Cy = crop_margin
-            self.img = F.pad(self.img, (Cy, Cy, Cx, Cx, Cz, Cz), mode='constant', value=self.img.min())
+            self.img = F.pad(self.img, (Cy, Cy, Cx, Cx, Cz, Cz), mode='constant', value=self.img.mean())
             _, _, Dz, Dx, Dy = self.img.shape  # Update dimensions after C padding
             print(f"After C padding: {self.img.shape}")
 
@@ -209,7 +209,7 @@ class ImageLoader:
         Ny = ((Dy // dy) + 1) * dy
 
         Pz, Px, Py = Nz - Dz, Nx - Dx, Ny - Dy
-        self.img = F.pad(self.img, (0, Py, 0, Px, 0, Pz), mode='constant', value=self.img.min())
+        self.img = F.pad(self.img, (0, Py, 0, Px, 0, Pz), mode='constant', value=self.img.mean())
         print(f"Final padded shape: {self.img.shape}")
 
         return self.img
