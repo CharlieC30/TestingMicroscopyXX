@@ -258,12 +258,20 @@ class PatchProcessor:
 class OutputWriter:
     """Handles threaded file writing."""
 
-    def __init__(self, dest, save_types, output_dtype='float32'):
+    def __init__(self, dest, save_types, output_dtype='float32', savestd=None):
         self.dest = dest
         self.save_types = save_types
         self.output_dtype = output_dtype
+        self.savestd = savestd
         self.write_queue = queue.Queue(maxsize=100)
         self.writer_thread = None
+
+    def _temp_to_uint8(self, x):
+        """Convert array to uint8 range (0-255)."""
+        x = x - x.min()
+        if x.max() > 0:
+            x = x / x.max()
+        return (x * 255).astype(np.uint8)
 
     def _convert_dtype(self, data):
         """Convert data from (-1, 1) to target dtype."""
@@ -296,6 +304,11 @@ class OutputWriter:
                     tiff.imwrite(os.path.join(self.dest, 'xy', f'{iz}_{ix}_{iy}.tif'), out_all_mean)
                 if 'ori' in self.save_types:
                     tiff.imwrite(os.path.join(self.dest, 'ori', f'{iz}_{ix}_{iy}.tif'), patch)
+                if self.savestd is not None:
+                    out_all_std = ((out_all[:, :, ::] > self.savestd) / 1).std(axis=-1)
+                    out_all_std = np.transpose(out_all_std, (1, 0, 2, 3))
+                    out_all_std = np.array([self._temp_to_uint8(x) for x in out_all_std])
+                    tiff.imwrite(os.path.join(self.dest, 'xyvar', f'{iz}_{ix}_{iy}.tif'), out_all_std)
             except Exception as e:
                 print(f"Error writing {iz}_{ix}_{iy}: {e}")
             finally:
@@ -340,27 +353,37 @@ class InferencePipeline:
         print("Loading image...")
         self.image_loader = ImageLoader(self.config)
 
+        # Expand augmentations by mc (monte carlo) repetitions
+        base_augmentations = self.config.get('input_augmentation', [None])
+        mc = self.config.get('mc', 1)
+        augmentations = base_augmentations * mc
+        print(f"Using {len(base_augmentations)} augmentations x {mc} mc = {len(augmentations)} total samples")
+
         self.processor = PatchProcessor(
             self.model_loader.model_proc,
             self.model_loader.upsample,
-            self.config.get('input_augmentation', [None]),
+            augmentations,
             fp16=args.fp16,
             gpu=args.gpu
         )
 
         output_dtype = self.config.get('output_dtype', 'float32')
-        self.writer = OutputWriter(self.dest, args.save, output_dtype=output_dtype)
+        self.writer = OutputWriter(self.dest, args.save, output_dtype=output_dtype, savestd=args.savestd)
 
     def _setup_output_dirs(self):
-        for folder in self.args.save:
+        folders = list(self.args.save)
+        if self.args.savestd is not None:
+            folders.append("xyvar")
+        for folder in folders:
             folder_path = os.path.join(self.dest, folder)
-            if os.path.exists(folder_path):
+            if self.args.clean and os.path.exists(folder_path):
                 shutil.rmtree(folder_path)
             os.makedirs(folder_path, exist_ok=True)
 
-        # Save config
-        with open(os.path.join(self.dest, 'config.yaml'), 'w') as f:
-            yaml.dump(self.config.cfg, f)
+        # Save config (only when --clean to avoid conflicts in multi-GPU)
+        if self.args.clean:
+            with open(os.path.join(self.dest, 'config.yaml'), 'w') as f:
+                yaml.dump(self.config.cfg, f)
 
     def _get_patch_grid(self, img_shape):
         cfg = self.config.cfg
@@ -377,6 +400,11 @@ class InferencePipeline:
             zrange = range(*[int(eval(str(x))) for x in cfg['assemble_params']['zrange']])
             xrange = range(*[int(eval(str(x))) for x in cfg['assemble_params']['xrange']])
             yrange = range(*[int(eval(str(x))) for x in cfg['assemble_params']['yrange']])
+
+        # Override zrange if provided via command line
+        if self.args.zrange is not None:
+            zrange = range(*self.args.zrange)
+            print(f"Using command-line zrange: {list(zrange)}")
 
         return zrange, xrange, yrange
 
@@ -439,6 +467,9 @@ def parse_args():
     parser.add_argument('--augmentation', type=str, default='encode', choices=['encode', 'decode'],
                         help='Augmentation stage: encode or decode')
     parser.add_argument('--save', nargs='+', default=['ori', 'xy'], help='What to save: ori, xy')
+    parser.add_argument('--savestd', type=float, default=None, help='save std threshold over monte carlo inference')
+    parser.add_argument('--zrange', nargs=3, type=int, default=None, help='Override z-range: start stop step')
+    parser.add_argument('--clean', action='store_true', help='Clean output folders before running (skip for multi-GPU)')
     return parser.parse_args()
 
 

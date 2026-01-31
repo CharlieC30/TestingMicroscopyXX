@@ -1,0 +1,32 @@
+DEFAULT:
+  SOURCE: '/media/ExtHDD01/'
+  root_path: "/media/ghc/Ghc_data3/THX10/"
+  DESTINATION: "/media/ghc/Ghc_data3/THX10/"
+  upsample_params: # upsample size, same with dx if no upsample
+    size: [32, 256, 256]
+  assemble_params:
+    C: [16, 16, 16] # cropped pixels
+    S: [16, 16, 16] # overlapping pixels
+    dx_shape: [32, 256, 256 ] # (dz, dx, dy) inference size # upsample size (60, 128, 384) > (384, 128, 384)
+    weight_shape: [ 224, 224, 224] # shape of the weight = dx_shape - cropping
+    weight_method: "cross"
+    testwhole: false
+    zrange: [ 256,  512 - 13 * 0, 13 * 2] # (z0, x0, y0), (z0 + dz, x0 + dx, y0 + dy), coordinates after upsampling
+    xrange: [ 0, 1024 - 13 * 16, 13 * 16] #3624 - 13*16, 13 * 16]
+    yrange: [ 0, 1024 - 13 * 16,  13 * 16]
+  mc: 1
+  input_augmentation: [null, 'transpose'] #, 'flipX', 'flipY']
+  output_channel: 1
+  output_dtype: float32  # uint8: convert (-1,1) to (0,255), float32: keep original
+ENC:
+  dataset: "ENC"
+  image_path: ['roiD.tif']
+  prj: "/THX10SDM20xw/roiAdsp4/max5skip4/"
+  epoch : 1700
+  model_type: "VQQ2"
+  hbranchz: true
+  downbranch: 1
+  norm_method: ["00"]  # normalization method for each data in the list
+  trd: [[0, 1000]] # this is for standard normalization (min() and max())
+  norm_mean_std: null #[-0.5177, 0.1452]
+  norm_percentile: [0.1, 99.9]
