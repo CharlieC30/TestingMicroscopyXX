@@ -16,7 +16,7 @@
 
 
 CUDA_VISIBLE_DEVICES=0 python test_patch.py --config MouseGolgi --option ENC --gpu --clean --savestd -0.7 --fp16
-python test_assemble.py --config MouseGolgi --targets xy --image_datatype float32 --option ENC
+#python test_assemble.py --config MouseGolgi --targets xy ori --image_datatype float32 --option ENC
 
 
 

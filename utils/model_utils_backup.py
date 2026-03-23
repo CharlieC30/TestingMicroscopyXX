@@ -122,11 +122,12 @@ class ModelProcesser:
         # upsample the original to Xup for display
         target_shape = XupX.permute(1, 2, 3, 0).unsqueeze(0).shape[2:]
         Xup = torch.nn.Upsample(size=target_shape, mode='trilinear')(
-            x0.cpu().float().permute(1, 2, 3, 0).unsqueeze(0))  # Upsample on CPU
+            x0.float().permute(1, 2, 3, 0).unsqueeze(0))  # (1, C, X, Y, Z)
         Xup = Xup[0, :, ::].permute(3, 0, 1, 2).detach().to('cpu')  # .numpy()  # (Z, C, X, Y))
 
         #print('XupX shape:', XupX.shape)
         #print('Xup shape:', Xup.shape)
+
         return XupX, Xup, out_aug, hbranch
 
     def get_ae_encode(self, x0, method=None):
@@ -149,14 +150,14 @@ class ModelProcesser:
         with torch.inference_mode():
             with torch.cuda.amp.autocast(enabled=self.fp16):
                 _, posterior, hbranch = self.model.forward(x0, sample_posterior=False)
-                if self.kwargs['hbranchz']:
-                    hbranch = posterior.sample()
+            if self.kwargs['hbranchz']:
+                hbranch = posterior.sample()
 
-                # extra downsample to reduce the size of hbranch for lower expansion rate (<8)
-                if self.kwargs['downbranch'] > 1:
-                    hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
-                    hbranch = nn.MaxPool3d((1, 1, self.kwargs['downbranch']))(hbranch)  # extra downsample, (1, C, X, Y, Z/2)
-                    hbranch = hbranch.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]  # (Z, C, X, Y)
+        # extra downsample to reduce the size of hbranch for lower expansion rate (<8)
+        if self.kwargs['downbranch'] > 1:
+            hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
+            hbranch = nn.MaxPool3d((1, 1, self.kwargs['downbranch']))(hbranch)  # extra downsample, (1, C, X, Y, Z/2)
+            hbranch = hbranch.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]  # (Z, C, X, Y)
 
         return _, _, hbranch
 
@@ -175,19 +176,24 @@ class ModelProcesser:
             hbranch = hbranch.cuda()
         if self.augmentation == "decode":
             hbranch = self._test_time_augementation(hbranch, method=method)
+        if self.kwargs['hbranchz']:
+            hbranch = self.model.decoder.conv_in(hbranch)
 
-        with torch.inference_mode():
-            with torch.cuda.amp.autocast(enabled=self.fp16):
-                if self.kwargs['hbranchz']:
-                    hbranch = self.model.decoder.conv_in(hbranch)
+        hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (C, X, Y, Z)
 
-                hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (C, X, Y, Z)
-                if self.fp16:
-                    hbranch = hbranch.half()  # Ensure fp16 before net_g
+        if ii is not None:
+            iz, ix, iy = ii
+            #hb2 = np.load('/media/ghc/Ghc_data3/BRC/aisr/aisr122424/enhanced/hbranch/hbranch_' + str(iz) + '_' + str(ix) + '_' + str(iy) + '.npy')
+            #hb2 = torch.from_numpy(hb2).float().cuda()
+            #hbranch = (hbranch + hb2) / 2.0  # average with the precomputed hbranch
+            #max pooling
+            #print(hbranch.shape, hb2.shape)
+            #hbranch = torch.stack([hbranch, hb2], dim=-1).max(dim=-1)[0]  # (Z, C, X, Y)
 
-                out = self.model.net_g(hbranch, method='decode')
-
-        Xout = out['out0'].detach()  # (1, C, X, Y, Z)
+        torch.cuda.synchronize()
+        out = self.model.net_g(hbranch, method='decode')
+        Xout = out['out0'].detach()#.to('cpu')  # (1, C, X, Y, Z) # , non_blocking=True, non_blocking=True
+        torch.cuda.synchronize()
 
         # (1, C, X, Y, Z)
         XupX = Xout[0, :].permute(3, 0, 1, 2)  # (Z, C, X, Y)
@@ -270,11 +276,9 @@ class ModelProcesser:
                     # Decode
                     h = self.model.decoder.conv_in(h)  # (16, 256, 16, 16)
                     h = h.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
-                    if self.fp16:
-                        h = h.half()  # Ensure fp16 before net_g
-
+                    
                     # Generate output
-                    XupX = self.model.net_g(h, method='decode')['out0'].detach().cpu().float()
+                    XupX = self.model.net_g(h[:, :, :, :, :], method='decode')['out0'].detach().cpu().float()
                     # Remove batch dimension and rearrange: (1, C, X, Y, Z) -> (Z, C, X, Y)
                     XupX = XupX[0, :].permute(3, 0, 1, 2)  # (Z, C, X, Y)
 
@@ -298,7 +302,7 @@ class ModelProcesser:
         # upsample the original to Xup for display
         target_shape = XupX.permute(1, 2, 3, 0).unsqueeze(0).shape[2:]
         Xup = torch.nn.Upsample(size=target_shape, mode='trilinear')(
-            x0.cpu().float().permute(1, 2, 3, 0).unsqueeze(0))  # Upsample on CPU
+            x0.float().permute(1, 2, 3, 0).unsqueeze(0))  # (1, C, X, Y, Z)
         Xup = Xup[0, :, ::].permute(3, 0, 1, 2).detach().to('cpu')  # .numpy()  # (Z, C, X, Y))
         #print('XupX shape:', XupX.shape)
         #print('Xup shape:', Xup.shape)

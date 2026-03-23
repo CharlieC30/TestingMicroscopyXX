@@ -12,17 +12,17 @@ DEFAULT:
     weight_method: "cross"
     testwhole: false
     zrange: [ 0,  256, 13 * 2] # (z0, x0, y0), (z0 + dz, x0 + dx, y0 + dy), coordinates after upsampling
-    xrange: [ 0, 512, 13 * 16] #3624 - 13*16, 13 * 16]
-    yrange: [ 0, 512,  13 * 16]
+    xrange: [ 0, 1024, 13 * 16] #3624 - 13*16, 13 * 16]
+    yrange: [ 0, 1024,  13 * 16]
   mc: 1
-  input_augmentation: [null, 'transpose'] #, 'flipX', 'flipY']
+  input_augmentation: [null] #, 'transpose'] #, 'flipX', 'flipY']
   output_channel: 1
   output_dtype: float32  # uint8: convert (-1,1) to (0,255), float32: keep original
 ENC:
   dataset: "ENC"
   image_path: ['ME2509302.tif']
-  prj: "/MouseGolgi/roiAdsp4/max3skip8dim8/"
-  epoch : 200
+  prj: "/MouseGolgi/roiAdsp4/max2skip8/"
+  epoch : 1200
   model_type: "VQQ2"
   hbranchz: true
   downbranch: 1
